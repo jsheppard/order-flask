@@ -203,3 +203,7 @@ Tests are in `tests/test_order_models.py` and run with the rest of the suite.
 - The `/api/v2` data is in MongoDB. Each PATCH reads the document and writes it back, so
   two simultaneous PATCHes to the same item can overwrite each other (last write wins).
 - Money is handled with `Decimal` and returned as strings such as `"24.98"`.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for the full text.
