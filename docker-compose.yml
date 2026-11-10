@@ -1,0 +1,37 @@
+# Test stack: MongoDB plus the order-flask API, for local testing only.
+#
+#   docker compose up -d --build           # start MongoDB and the API
+#   curl http://localhost:8080/api/health  # check the API
+#   docker compose down                    # stop (keeps the mongo-data volume)
+#   docker compose down -v                 # stop and delete the database volume
+#
+# MongoDB is published on host port 27018 (not 27017, to avoid clashing with a MongoDB
+# already running on localhost:27017). The API reaches it as mongo:27017 on the compose network.
+
+services:
+  mongo:
+    image: mongo:8
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      APP_CONFIG: production
+      MONGODB_URI: mongodb://mongo:27017/order-data
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo-data:

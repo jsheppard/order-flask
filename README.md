@@ -25,7 +25,9 @@ order-flask/
 │   ├── domain_store.py # MongoDB storage for /api/v2 (in-memory for tests)
 ├── tests/
 ├── run.py             # Entry point
-└── requirements.txt
+├── requirements.txt
+├── Dockerfile         # Production image for the API (gunicorn)
+└── docker-compose.yml # Test stack: MongoDB plus the API (see Docker)
 ```
 
 ## Setup
@@ -63,6 +65,40 @@ python run.py                       # development server on http://localhost:500
 APP_CONFIG=production python run.py # or serve with gunicorn: gunicorn "run:app"
 ```
 
+## Docker
+
+`docker-compose.yml` runs MongoDB 8 and the API together for testing. Docker Compose v2
+is required.
+
+```bash
+docker compose up -d --build          # build the API image and start both services
+curl http://localhost:8080/api/health # API on http://localhost:8080
+docker compose logs -f app            # follow API logs
+docker compose down                   # stop; keeps the mongo-data volume
+docker compose down -v                # stop and delete the database volume
+```
+
+- The API container uses the production config (`APP_CONFIG=production`) and connects to
+  `mongodb://mongo:27017/order-data`. Both are set in `docker-compose.yml`.
+- MongoDB is published on host port 27018 (`mongodb://localhost:27018/order-data`), so it does
+  not clash with a MongoDB already on `localhost:27017`. To use a shell against it, run
+  `docker compose exec mongo mongosh order-data`.
+- The `mongo-data` volume starts empty. Load data into it with the restore steps below.
+  `docker compose down -v` deletes the volume, so the data must be restored again after that.
+
+To restore an archive into the compose MongoDB, mount its folder read-only and run
+`mongorestore` in a one-off container on the compose network:
+
+```bash
+docker compose run --rm --no-deps \
+  -v /path/to/archive-folder:/restore:ro \
+  --entrypoint mongorestore mongo \
+  --uri="mongodb://mongo:27017" \
+  --archive=/restore/order-data-YYYYMMDD-HHMMSS.archive.gz --gzip
+```
+
+Check that the API serves the data, for example `curl http://localhost:8080/api/v2/donuts`.
+
 ## Test
 
 ```bash
@@ -76,6 +112,45 @@ use the `order_flask_test` database and drop it when they finish:
 ```bash
 MONGODB_TEST_URI="$MONGODB_URI" python -m unittest tests.test_domain_mongo -v
 ```
+
+## Backup and restore
+
+The `order-data` database can be exported to a single compressed archive with
+`mongodump` and loaded into another MongoDB with `mongorestore` (both come with the
+MongoDB Database Tools). The archive includes the indexes.
+
+Export (read-only against the source):
+
+```bash
+mkdir -p ~/order-data-exports
+mongodump --uri="mongodb://localhost:27017/order-data" \
+  --archive="$HOME/order-data-exports/order-data-$(date +%Y%m%d-%H%M%S).archive.gz" --gzip
+```
+
+Restore into the target MongoDB (this writes to the target, so check the URI first):
+
+```bash
+mongorestore --uri="mongodb://TARGET_HOST:27017" \
+  --archive=/path/to/order-data-YYYYMMDD-HHMMSS.archive.gz --gzip
+```
+
+To load the data into a database with a different name, add
+`--nsFrom='order-data.*' --nsTo='NEW_NAME.*'`. To restore into a non-empty database,
+add `--drop` only if you intend to replace the existing collections.
+
+To check an archive, restore it into a scratch database and compare document counts
+with the source. Drop the scratch database afterward:
+
+```bash
+mongorestore --uri="mongodb://localhost:27017" --archive=/path/to/archive.gz --gzip \
+  --nsFrom='order-data.*' --nsTo='order-data-verify.*'
+```
+
+To restore into the Docker test stack instead, see [Docker](#docker).
+
+The archive holds the full database, including the `user`, `gmail_config` and
+`gmail_messages` collections, which may contain credentials and personal data. Store
+it outside the repository and restrict who can read it.
 
 ## Endpoints
 
