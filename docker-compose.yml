@@ -7,10 +7,15 @@
 #
 # MongoDB is published on host port 27018 (not 27017, to avoid clashing with a MongoDB
 # already running on localhost:27017). The API reaches it as mongo:27017 on the compose network.
+#
+# With Podman, use `podman compose` in place of `docker compose`. scripts/test_mongo.py and
+# scripts/test_all.sh start and stop the mongo service themselves for the MongoDB tests.
 
 services:
   mongo:
-    image: mongo:8
+    # Fully qualified so Podman can pull it too: Podman rejects short names such as mongo:8
+    # unless its registries.conf configures a search registry. Docker pulls the same image.
+    image: docker.io/library/mongo:8
     ports:
       - "27018:27017"
     volumes:
